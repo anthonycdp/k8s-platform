@@ -1,0 +1,94 @@
+# Kubernetes Platform - Git Ignore
+
+# ===========================================
+# Secrets (NEVER commit real secrets)
+# ===========================================
+secrets/*-prod.yaml
+secrets/*-live.yaml
+secrets/*-staging.yaml
+*.secret.yaml
+*.secret.yml
+.env
+.env.*
+*.env
+
+# ===========================================
+# Go Application
+# ===========================================
+app/bin/
+app/go.sum
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+go.work
+
+# ===========================================
+# Docker
+# ===========================================
+.docker/
+docker-cache/
+
+# ===========================================
+# IDE & Editors
+# ===========================================
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+*.sublime-*
+
+# ===========================================
+# OS Generated
+# ===========================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+
+# ===========================================
+# Helm
+# ===========================================
+helm-charts/**/charts/
+*.tgz
+
+# ===========================================
+# Build & Generated
+# ===========================================
+generated/
+_output/
+dist/
+build/
+*.tmp
+*.temp
+*.log
+
+# ===========================================
+# Kubernetes
+# ===========================================
+kubeconfig
+*.kubeconfig
+.context-*
+
+# ===========================================
+# Terraform (if used)
+# ===========================================
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!.terraform.lock.hcl
+
+# ===========================================
+# Test Coverage
+# ===========================================
+coverage.out
+coverage.html
+*.coverprofile
