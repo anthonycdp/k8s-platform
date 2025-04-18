@@ -1,0 +1,174 @@
+# Argo Rollouts - Canary Deployment Strategy
+# Requires Argo Rollouts controller installed in cluster
+
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: api-server
+  namespace: platform
+  labels:
+    app: api-server
+    app.kubernetes.io/name: api-server
+    deployment.strategy: canary
+spec:
+  replicas: 3
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: api-server
+  template:
+    metadata:
+      labels:
+        app: api-server
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: api-server
+          image: nginx:1.27-alpine
+          ports:
+            - name: http
+              containerPort: 8080
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+
+  # Canary Strategy Configuration
+  strategy:
+    canary:
+      # Canary steps - gradual traffic shifting
+      steps:
+        # 1. Start with 5% traffic to canary
+        - setWeight: 5
+        # 2. Wait 10 minutes to collect metrics
+        - pause:
+            duration: 10m
+        # 3. Increase to 20%
+        - setWeight: 20
+        # 4. Wait another 10 minutes
+        - pause:
+            duration: 10m
+        # 5. Increase to 50%
+        - setWeight: 50
+        # 6. Manual approval required for full rollout
+        - pause: {}
+        # 7. Full rollout
+        - setWeight: 100
+
+      # Traffic routing via Istio
+      trafficRouting:
+        istio:
+          virtualService:
+            name: api-server-virtualservice
+            routes:
+              - primary
+
+      # Analysis during canary - automated rollback on failure
+      analysis:
+        startingStep: 2  # Start analysis after 20% traffic
+        templates:
+          - templateName: success-rate
+        args:
+          - name: service-name
+            value: api-server
+
+      # Anti-affinity for canary pods
+      antiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app: api-server
+            topologyKey: kubernetes.io/hostname
+---
+# Analysis Template for Canary
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: success-rate
+  namespace: platform
+spec:
+  args:
+    - name: service-name
+  metrics:
+    - name: success-rate
+      interval: 5m
+      count: 6  # Run 6 times over 30 minutes
+      successCondition: result[0] >= 0.99
+      failureLimit: 3  # Allow 3 failures before aborting
+      provider:
+        prometheus:
+          address: http://prometheus-platform:9090
+          query: |
+            sum(rate(http_requests_total{service="{{args.service-name}}",status!~"5.."}[5m])) /
+            sum(rate(http_requests_total{service="{{args.service-name}}"}[5m]))
+    - name: latency-p99
+      interval: 5m
+      count: 6
+      successCondition: result[0] <= 0.5  # 500ms
+      failureLimit: 3
+      provider:
+        prometheus:
+          address: http://prometheus-platform:9090
+          query: |
+            histogram_quantile(0.99,
+              sum(rate(http_request_duration_seconds_bucket{service="{{args.service-name}}"}[5m])) by (le)
+            )
+---
+# Istio VirtualService for Traffic Routing
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: api-server-virtualservice
+  namespace: platform
+spec:
+  hosts:
+    - api-server
+  http:
+    - name: primary
+      route:
+        - destination:
+            host: api-server
+            subset: stable
+          weight: 100
+        - destination:
+            host: api-server
+            subset: canary
+          weight: 0
+---
+# Istio DestinationRule
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: api-server
+  namespace: platform
+spec:
+  host: api-server
+  subsets:
+    - name: stable
+      labels:
+        rollouts-pod-template-hash: stable
+    - name: canary
+      labels:
+        rollouts-pod-template-hash: canary

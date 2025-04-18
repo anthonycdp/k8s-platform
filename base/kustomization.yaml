@@ -1,0 +1,22 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Base configuration - shared across all environments
+
+commonLabels:
+  app.kubernetes.io/managed-by: kustomize
+
+resources:
+  - ../namespaces/namespace-dev.yaml
+  - ../namespaces/namespace-quota.yaml
+  - ../namespaces/limit-range.yaml
+  - ../deployments/api-deployment.yaml
+  - ../deployments/web-frontend-deployment.yaml
+  - ../deployments/worker-deployment.yaml
+  - ../deployments/redis-deployment.yaml
+  - ../services/services.yaml
+  - ../ingresses/ingress-main.yaml
+  - ../ingresses/network-policy.yaml
+  - ../configmaps/api-config.yaml
+  - ../hpa/hpa-basic.yaml
+  - ../hpa/vpa.yaml
