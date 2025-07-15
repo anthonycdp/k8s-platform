@@ -1,0 +1,124 @@
+# Horizontal Pod Autoscaler (HPA) Advanced Configurations
+# Multiple scaling strategies for different use cases
+
+---
+# HPA with custom metrics (requires Prometheus Adapter)
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: api-server-hpa-custom
+  namespace: platform
+  labels:
+    app: api-server
+    scaling-strategy: custom-metrics
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: api-server
+  minReplicas: 3
+  maxReplicas: 50
+  metrics:
+    # CPU-based scaling
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+
+    # Memory-based scaling
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+
+    # Custom metric: requests per second
+    - type: Pods
+      pods:
+        metric:
+          name: http_requests_per_second
+        target:
+          type: AverageValue
+          averageValue: "1000"
+
+    # Custom metric: queue depth (for async workers)
+    - type: External
+      external:
+        metric:
+          name: sqs_queue_depth
+          selector:
+            matchLabels:
+              queue: "platform-jobs"
+        target:
+          type: AverageValue
+          averageValue: "100"
+
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        # Scale down by at most 10% of current replicas per minute
+        - type: Percent
+          value: 10
+          periodSeconds: 60
+        # Or by at most 2 pods per minute
+        - type: Pods
+          value: 2
+          periodSeconds: 60
+      selectPolicy: Min  # Use the most conservative policy
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        # Scale up by 100% of current replicas per 15 seconds
+        - type: Percent
+          value: 100
+          periodSeconds: 15
+        # Or by at most 4 pods per 15 seconds
+        - type: Pods
+          value: 4
+          periodSeconds: 15
+      selectPolicy: Max  # Use the most aggressive policy
+---
+# HPA for CPU-intensive workloads
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: api-server-hpa-cpu-optimized
+  namespace: platform
+  labels:
+    app: api-server
+    scaling-strategy: cpu-optimized
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: api-server
+  minReplicas: 5
+  maxReplicas: 100
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 50  # Scale earlier for CPU-bound workloads
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Percent
+          value: 200  # Scale faster for traffic spikes
+          periodSeconds: 15
+        - type: Pods
+          value: 10
+          periodSeconds: 15
+      selectPolicy: Max
+    scaleDown:
+      stabilizationWindowSeconds: 600  # Slower scale down to prevent thrashing
+      policies:
+        - type: Percent
+          value: 5
+          periodSeconds: 120

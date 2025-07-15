@@ -1,0 +1,92 @@
+# Vertical Pod Autoscaler (VPA) Configuration
+# Recommends and optionally sets resource requests/limits
+
+---
+# VPA for API Server - Auto mode (production use with caution)
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: api-server-vpa
+  namespace: platform
+  labels:
+    app: api-server
+    app.kubernetes.io/name: api-server
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: api-server
+  updatePolicy:
+    # Modes: Off (recommend only), Initial (on pod creation), Auto (continuous)
+    # Use "Off" in production until you understand the impact
+    updateMode: "Off"  # Change to "Auto" to enable automatic scaling
+  resourcePolicy:
+    containerPolicies:
+      - containerName: api-server
+        # Minimum resources allowed
+        minAllowed:
+          cpu: 50m
+          memory: 64Mi
+        # Maximum resources allowed
+        maxAllowed:
+          cpu: 2
+          memory: 2Gi
+        # Which resources to control
+        controlledResources: ["cpu", "memory"]
+        # How to set resources
+        controlledValues: RequestsAndLimits
+        # Only scale up, never down (safer for production)
+        mode: "Auto"
+---
+# VPA for API Server - Recommendation only (staging/dev)
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: api-server-vpa-recommend
+  namespace: platform-staging
+  labels:
+    app: api-server
+    app.kubernetes.io/name: api-server
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: api-server-staging
+  updatePolicy:
+    updateMode: "Off"  # Recommendation mode only
+  resourcePolicy:
+    containerPolicies:
+      - containerName: api-server
+        minAllowed:
+          cpu: 25m
+          memory: 32Mi
+        maxAllowed:
+          cpu: 1
+          memory: 1Gi
+        controlledResources: ["cpu", "memory"]
+---
+# VPA for Frontend
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: frontend-vpa
+  namespace: platform
+  labels:
+    app: frontend
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: frontend
+  updatePolicy:
+    updateMode: "Off"
+  resourcePolicy:
+    containerPolicies:
+      - containerName: frontend
+        minAllowed:
+          cpu: 25m
+          memory: 32Mi
+        maxAllowed:
+          cpu: 500m
+          memory: 512Mi
+        controlledResources: ["cpu", "memory"]
