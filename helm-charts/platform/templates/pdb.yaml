@@ -1,0 +1,35 @@
+{{- if and .Values.apiServer.enabled .Values.apiServer.pdb.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "platform.fullname" . }}-api-server-pdb
+  labels:
+    {{- include "platform.apiServer.labels" . | nindent 4 }}
+spec:
+  {{- if .Values.apiServer.pdb.minAvailable }}
+  minAvailable: {{ .Values.apiServer.pdb.minAvailable }}
+  {{- else if .Values.apiServer.pdb.maxUnavailable }}
+  maxUnavailable: {{ .Values.apiServer.pdb.maxUnavailable }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "platform.apiServer.selectorLabels" . | nindent 6 }}
+{{- end }}
+---
+{{- if and .Values.frontend.enabled .Values.frontend.pdb.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "platform.fullname" . }}-frontend-pdb
+  labels:
+    {{- include "platform.frontend.labels" . | nindent 4 }}
+spec:
+  {{- if .Values.frontend.pdb.minAvailable }}
+  minAvailable: {{ .Values.frontend.pdb.minAvailable }}
+  {{- else if .Values.frontend.pdb.maxUnavailable }}
+  maxUnavailable: {{ .Values.frontend.pdb.maxUnavailable }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "platform.frontend.selectorLabels" . | nindent 6 }}
+{{- end }}

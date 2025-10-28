@@ -1,0 +1,348 @@
+# Default values for platform.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+# -- Override the name of the chart
+nameOverride: ""
+# -- Override the full name of resources
+fullnameOverride: ""
+
+# -- Global settings applied to all components
+global:
+  # -- Environment name (dev, staging, prod)
+  environment: production
+  # -- Image registry
+  imageRegistry: ""
+  # -- Image pull secrets
+  imagePullSecrets: []
+  # -- Pod security context
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+    seccompProfile:
+      type: RuntimeDefault
+
+# -- API Server component configuration
+apiServer:
+  enabled: true
+
+  # -- Number of replicas
+  replicaCount: 3
+
+  image:
+    # -- Image repository
+    repository: platform-api
+    # -- Image tag
+    tag: "latest"
+    # -- Image pull policy
+    pullPolicy: IfNotPresent
+
+  # -- Container security context
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL
+
+  # -- Resource requests and limits
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  # -- Service configuration
+  service:
+    type: ClusterIP
+    port: 80
+    targetPort: 8080
+    annotations: {}
+    labels: {}
+
+  # -- Metrics configuration
+  metrics:
+    enabled: true
+    port: 9090
+    path: /metrics
+
+  # -- Health check configuration
+  healthCheck:
+    readiness:
+      path: /ready
+      initialDelaySeconds: 5
+      periodSeconds: 10
+      timeoutSeconds: 5
+      failureThreshold: 3
+    liveness:
+      path: /health
+      initialDelaySeconds: 15
+      periodSeconds: 20
+      timeoutSeconds: 5
+      failureThreshold: 3
+    startup:
+      path: /health
+      initialDelaySeconds: 0
+      periodSeconds: 5
+      timeoutSeconds: 5
+      failureThreshold: 30
+
+  # -- Environment variables from ConfigMap
+  env:
+    APP_NAME: platform-api
+    LOG_LEVEL: info
+    PORT: "8080"
+    METRICS_PORT: "9090"
+
+  # -- Environment variables from Secrets
+  envSecrets:
+    - name: DATABASE_PASSWORD
+      secretName: api-secrets
+      secretKey: DATABASE_PASSWORD
+    - name: API_KEY
+      secretName: api-secrets
+      secretKey: API_KEY
+
+  # -- Autoscaling configuration
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 20
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+    # -- Custom metrics for scaling
+    customMetrics: []
+    # - name: http_requests_per_second
+    #   type: Pods
+    #   target:
+    #     type: AverageValue
+    #     averageValue: "1000"
+    behavior:
+      scaleDown:
+        stabilizationWindowSeconds: 300
+        policies:
+          - type: Percent
+            value: 10
+            periodSeconds: 60
+      scaleUp:
+        stabilizationWindowSeconds: 0
+        policies:
+          - type: Percent
+            value: 100
+            periodSeconds: 15
+
+  # -- Pod Disruption Budget
+  pdb:
+    enabled: true
+    minAvailable: 2
+    # maxUnavailable: 1
+
+  # -- Pod affinity settings
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchLabels:
+                app: api-server
+            topologyKey: kubernetes.io/hostname
+    nodeAffinity: {}
+
+  # -- Topology spread constraints
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: topology.kubernetes.io/zone
+      whenUnsatisfiable: ScheduleAnyway
+
+  # -- Node selector
+  nodeSelector: {}
+
+  # -- Tolerations
+  tolerations: []
+
+  # -- Service account configuration
+  serviceAccount:
+    create: true
+    name: ""
+    annotations: {}
+    automountServiceAccountToken: false
+
+  # -- Pod annotations
+  podAnnotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9090"
+    prometheus.io/path: "/metrics"
+
+# -- Frontend component configuration
+frontend:
+  enabled: true
+  replicaCount: 2
+
+  image:
+    repository: nginx
+    tag: "1.27-alpine"
+    pullPolicy: IfNotPresent
+
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+  service:
+    type: ClusterIP
+    port: 80
+    targetPort: 8080
+
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+
+  pdb:
+    enabled: true
+    minAvailable: 1
+
+# -- Ingress configuration
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+  hosts:
+    - host: api.platform.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+          service: api-server
+          port: 80
+    - host: platform.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+          service: frontend
+          port: 80
+        - path: /api
+          pathType: Prefix
+          service: api-server
+          port: 80
+  tls:
+    - secretName: platform-tls
+      hosts:
+        - api.platform.example.com
+        - platform.example.com
+
+# -- Network policies
+networkPolicy:
+  enabled: true
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: ingress-nginx
+      ports:
+        - port: 8080
+          protocol: TCP
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: database
+      ports:
+        - port: 5432
+          protocol: TCP
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: redis
+      ports:
+        - port: 6379
+          protocol: TCP
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - port: 53
+          protocol: UDP
+
+# -- Prometheus configuration
+prometheus:
+  enabled: true
+  # -- Enable ServiceMonitor for Prometheus Operator
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+    scrapeTimeout: 10s
+    labels:
+      release: prometheus
+
+# -- Grafana configuration
+grafana:
+  enabled: true
+  dashboards: {}
+  dashboardProviders: {}
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+
+# -- Canary deployment configuration (Argo Rollouts)
+canary:
+  enabled: false
+  # -- Traffic routing service
+  trafficRouting:
+    istio:
+      virtualService:
+        name: platform-virtualservice
+  # -- Steps for canary deployment
+  steps:
+    - setWeight: 5
+    - pause:
+        duration: 10m
+    - setWeight: 20
+    - pause:
+        duration: 10m
+    - setWeight: 50
+    - pause:
+        duration: 10m
+  # -- Analysis configuration
+  analysis:
+    enabled: true
+    templates:
+      - name: success-rate
+    startingStep: 2
+    args:
+      - name: service-name
+        value: api-server
+
+# -- Vertical Pod Autoscaler configuration
+vpa:
+  enabled: false
+  updatePolicy:
+    updateMode: Auto
+  resourcePolicy:
+    containerPolicies:
+      - containerName: api-server
+        minAllowed:
+          cpu: 50m
+          memory: 64Mi
+        maxAllowed:
+          cpu: 1000m
+          memory: 1Gi
+        controlledResources: ["cpu", "memory"]

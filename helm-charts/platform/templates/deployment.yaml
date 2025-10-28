@@ -1,0 +1,127 @@
+{{- if .Values.apiServer.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "platform.fullname" . }}-api-server
+  labels:
+    {{- include "platform.apiServer.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.apiServer.replicaCount }}
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      {{- include "platform.apiServer.selectorLabels" . | nindent 6 }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 0
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- with .Values.apiServer.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "platform.apiServer.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "platform.serviceAccountName" . }}
+      automountServiceAccountToken: {{ .Values.apiServer.serviceAccount.automountServiceAccountToken | default false }}
+      securityContext:
+        {{- include "platform.podSecurityContext" . | nindent 8 }}
+      containers:
+        - name: api-server
+          securityContext:
+            {{- toYaml .Values.apiServer.securityContext | nindent 12 }}
+          image: {{ include "platform.apiServer.image" . }}
+          imagePullPolicy: {{ .Values.apiServer.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.apiServer.env.PORT | default 8080 }}
+              protocol: TCP
+            {{- if .Values.apiServer.metrics.enabled }}
+            - name: metrics
+              containerPort: {{ .Values.apiServer.metrics.port }}
+              protocol: TCP
+            {{- end }}
+          env:
+            {{- range $key, $value := .Values.apiServer.env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+            {{- range .Values.apiServer.envSecrets }}
+            - name: {{ .name }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .secretName }}
+                  key: {{ .secretKey }}
+            {{- end }}
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          resources:
+            {{- toYaml .Values.apiServer.resources | nindent 12 }}
+          {{- if .Values.apiServer.healthCheck }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.apiServer.healthCheck.readiness.path | default "/ready" }}
+              port: http
+            initialDelaySeconds: {{ .Values.apiServer.healthCheck.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.apiServer.healthCheck.readiness.periodSeconds }}
+            timeoutSeconds: {{ .Values.apiServer.healthCheck.readiness.timeoutSeconds }}
+            failureThreshold: {{ .Values.apiServer.healthCheck.readiness.failureThreshold }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.apiServer.healthCheck.liveness.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.apiServer.healthCheck.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.apiServer.healthCheck.liveness.periodSeconds }}
+            timeoutSeconds: {{ .Values.apiServer.healthCheck.liveness.timeoutSeconds }}
+            failureThreshold: {{ .Values.apiServer.healthCheck.liveness.failureThreshold }}
+          startupProbe:
+            httpGet:
+              path: {{ .Values.apiServer.healthCheck.startup.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.apiServer.healthCheck.startup.initialDelaySeconds }}
+            periodSeconds: {{ .Values.apiServer.healthCheck.startup.periodSeconds }}
+            timeoutSeconds: {{ .Values.apiServer.healthCheck.startup.timeoutSeconds }}
+            failureThreshold: {{ .Values.apiServer.healthCheck.startup.failureThreshold }}
+          {{- end }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: cache
+              mountPath: /var/cache/nginx
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: cache
+          emptyDir: {}
+      {{- with .Values.apiServer.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.apiServer.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.apiServer.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.apiServer.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      terminationGracePeriodSeconds: 30
+{{- end }}
