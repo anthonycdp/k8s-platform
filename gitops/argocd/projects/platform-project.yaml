@@ -1,0 +1,64 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: platform
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: platform
+    app.kubernetes.io/component: gitops
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  description: Platform application project
+
+  # Source repositories
+  sourceRepos:
+    - '*'
+
+  # Destination clusters and namespaces
+  destinations:
+    - namespace: 'platform'
+      server: https://kubernetes.default.svc
+    - namespace: 'platform-*'
+      server: https://kubernetes.default.svc
+    - namespace: 'argocd'
+      server: https://kubernetes.default.svc
+
+  # Cluster resource allow list
+  clusterResourceWhitelist:
+    - group: ''
+      kind: Namespace
+    - group: 'rbac.authorization.k8s.io'
+      kind: ClusterRole
+    - group: 'rbac.authorization.k8s.io'
+      kind: ClusterRoleBinding
+    - group: 'apiextensions.k8s.io'
+      kind: CustomResourceDefinition
+    - group: 'admissionregistration.k8s.io'
+      kind: ValidatingWebhookConfiguration
+    - group: 'admissionregistration.k8s.io'
+      kind: MutatingWebhookConfiguration
+
+  # Namespace resource allow list
+  namespaceResourceWhitelist:
+    - group: '*'
+      kind: '*'
+
+  # Roles for CI/CD automation
+  roles:
+    - name: ci-role
+      description: Role for CI/CD automation
+      policies:
+        - p, proj:platform:ci-role, applications, get, platform/*, allow
+        - p, proj:platform:ci-role, applications, sync, platform/*, allow
+        - p, proj:platform:ci-role, applications, update, platform/*, allow
+      groups:
+        - platform-ci
+
+  # Sync windows (optional - restrict when syncs can occur)
+  # syncWindows:
+  #   - kind: deny
+  #     schedule: '0 0 * * *'
+  #     duration: 1h
+  #     applications:
+  #       - '*-prod'

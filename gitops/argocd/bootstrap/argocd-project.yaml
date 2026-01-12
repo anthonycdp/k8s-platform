@@ -1,0 +1,48 @@
+# ArgoCD Bootstrap - ApplicationSet for Multi-Environment Deployments
+# This creates applications for each environment automatically
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: platform-environments
+  namespace: argocd
+spec:
+  generators:
+    - list:
+        elements:
+          - env: dev
+            revision: develop
+            replicas: "1"
+          - env: staging
+            revision: staging
+            replicas: "2"
+          - env: prod
+            revision: main
+            replicas: "3"
+  template:
+    metadata:
+      name: 'platform-{{env}}'
+      labels:
+        app.kubernetes.io/name: platform
+        environment: '{{env}}'
+    spec:
+      project: platform
+      source:
+        repoURL: https://github.com/example/platform.git
+        targetRevision: '{{revision}}'
+        path: helm-charts/platform
+        helm:
+          releaseName: platform
+          parameters:
+            - name: apiServer.replicaCount
+              value: '{{replicas}}'
+            - name: global.environment
+              value: '{{env}}'
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: 'platform-{{env}}'
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
